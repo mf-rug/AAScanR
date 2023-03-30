@@ -1,6 +1,8 @@
+
 server <- function(input, output, session) {
+  allsubstr <- function(x, n) unique(substring(x, 1:(nchar(x) - n + 1), n:nchar(x)))
   AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
-  dms <- import("deep_mut_scanning_mf")
+  dms <- reticulate::import("deep_mut_scanning_mf")
   cods <- data.frame('AA' = c("A","D","E","F","C","G","H","I","K","L","M","N","P","Q","R","S","T","V","W","Y"),
              'cod' = c("GCG","CGC","AAC","GAT","TGC","GAA","CAG","GGC","CAT","ATT","CTG","AAA","ATG","TTT","CCG","AGC","ACC","TGG","TAT","GTG"))
   full_data <- reactive({
@@ -71,6 +73,25 @@ server <- function(input, output, session) {
       HTML('<i>',out,'<br>× WARNING: Stop codons deteceted! Selected the wrong frame? (Check start codon)</i>')
     }
   })
+  observeEvent(input$seq,{
+    if (str_detect(input$seq, '^[ATGCatgc]+$')) {
+      enable('orf')
+    } else {
+      print('disb')
+      disable('orf')
+    }
+  })
+  observeEvent(input$orf,{
+    if (str_detect(input$seq, '^[ATGCatgc]+$')) {
+      a <- c()
+      for (i in seq(6, str_length(input$seq), by =3)) {
+        a <- c(a, allsubstr(input$seq, i))
+      }
+      u <- a[str_detect(a, regex('^atg.*(taa|tga|tag)$', ignore_case = TRUE))]
+      updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u[which.max(str_length(u))])[1,]['start'] %>% as.numeric() -1)
+      updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u[which.max(str_length(u))])[1,]['end'] %>% as.numeric() -3)
+    }
+  }, ignoreInit = TRUE)
   
   output$prim_table <- renderDT({
     full <- full_data()
@@ -113,9 +134,9 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$example, {
-    updateTextAreaInput('seq', session = getDefaultReactiveDomain(), value = 'ATGCCATAGCATTTTTATCCATAAGATTAGCGGATCCTACCTGACGCTTTTTATCGCAACTCTCTACTGTTTCTCCATACCCGTTTTTTGGGCTAACAGGAGGAATTAACCATGGGCAGCAGCCATCATCATCATCATCACAGCAGCGGCCTGGTGCCGCGCGGCAGCCATTGACTTGGGCCCGAACAAAAACTCATCTCAGAAGAGGA')
-    updateTextInput('start', session = getDefaultReactiveDomain(), value = 112)
-    updateTextInput('end', session = getDefaultReactiveDomain(), value = 171)
+    updateTextAreaInput('seq', session = getDefaultReactiveDomain(), value = 'TTTCTCCATACCCGTTTTTTGGGCTAACAGGAGGAATTAACCATGAACACGATTAACATCGCTAAGAACGACTTCGAGATGGGTGAAGCACGCTTCGAGGTTGCGGATAACGCTGCCGCCTAACTTGGGCCCGAACAAAAACTCATCTCAGAAGAGGATCTGAATAGC')
+    updateTextInput('start', session = getDefaultReactiveDomain(), value = 42)
+    updateTextInput('end', session = getDefaultReactiveDomain(), value = 68)
   })
   
   observe({

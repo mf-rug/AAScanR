@@ -81,9 +81,10 @@ ui <- fluidPage(
      title = 'Generate Primers with deep_mut_scan',
      br(),
      div(style="display: inline-block;vertical-align:top;line-height: 2;", HTML('<Strong>Target Sequence (including flanking region)&nbsp&nbsp&nbsp</strong>')),
-     div(style="display: inline-block;vertical-align:top", actionLink('example', 'load example', style = "line-height: 2;", class = 'butt2')),
+     div(style="display: inline-block;vertical-align:top", actionButton('example', 'load example', style = "line-height: 0.8;", class = 'butt2')),
+     div(style="display: inline-block;vertical-align:top;line-height: 2;", HTML('&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp')),
+     div(style="display: inline-block;vertical-align:top", disabled(actionButton('orf', 'select longest ORF', style = "line-height: 0.8;", class = 'butt2'))),
      textAreaInput('seq', NULL, width = '100%', height = '25vh', 
-                   # placeholder = 'ATGCCATAGCATTTTTATCCATAAGATTAGCGGATCCTACCTGACGCTTTTTATCGCAACTCTCTACTGTTTCTCCATACCCGTTTTTTGGGCTAACAGGAGGAATTAACCATGGGCAGCAGCCATCATCATCATCATCACAGCAGCGGCCTGGTGCCGCGCGGCAGCCATTGACTTGGGCCCGAACAAAAACTCATCTCAGAAGAGGA'
      ),
      fluidRow(
        column(3,
