@@ -1,4 +1,150 @@
 server <- function(input, output, session) {
+  dms <- reticulate::import("deep_mut_scanning_mf")
+  # cods <- as.data.frame(read_tsv('cods', show_col_types = F, col_names = c('AA', 'cod')))
+  cods <- data.frame('AA' = c("A","D","E","F","C","G","H","I","K","L","M","N","P","Q","R","S","T","V","W","Y"),
+             'cod' = c("GCG","CGC","AAC","GAT","TGC","GAA","CAG","GGC","CAT","ATT","CTG","AAA","ATG","TTT","CCG","AGC","ACC","TGG","TAT","GTG"))
+  full_data <- reactive({
+    if (str_detect(input$seq, '^[ATGCatgc]+$') && str_detect(input$start, '^[0-9]+$') && str_detect(input$end, '^[0-9]+$')) {
+      if (as.numeric(input$start) < as.numeric(input$end) && as.numeric(input$start) > 25 && as.numeric(input$end) < (str_length(input$seq) -25)) {
+        full <- data.frame()
+        withProgress(
+          message = 'Calculating primers', value = 0, {
+            for (i in 1:nrow(cods)) {
+              out <- dms$deep_mutation_scan(input$seq, c(as.integer(input$start),as.integer(input$end)), mutation = cods[i, 'cod'], overlap_len=as.integer(15))
+              out.df <-
+                lapply(out, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
+              out.df <- do.call('cbind', out.df) %>% t() %>% as.data.frame()
+              out.df$mut <- cods[i, 'AA']
+              out.df$mutation <- paste0(out.df$AA, out.df$mut)
+              full <- rbind(full, out.df)
+              incProgress(1/nrow(cods), detail = HTML("<br>current amino acid is", cods[i, 'AA']))
+            }
+          }
+        )
+        enable('download_prims')
+      } else { disable('download_prims') }
+    } else { disable('download_prims') }
+    if (exists('full')) {
+      full
+    } else {
+      NA
+    }
+  })
+  
+  output$codnum <- renderUI({
+    if (str_detect(input$seq, '^[ATGCatgc]+$')) {
+      if (str_detect(input$start, '^[0-9]+$') && str_detect(input$end, '^[0-9]+$')) {
+        if (as.numeric(input$start) < as.numeric(input$end)) {
+          if (as.numeric(input$start) > 25) {
+            if (as.numeric(input$end) < (str_length(input$seq) -25)) {
+              selected_nts <- as.numeric(input$end) - as.numeric(input$start) + 1
+              if ((selected_nts /3) %% 1 == 0) {
+                out <- paste0(selected_nts /3, ' (✓ selected nucleotides a multiple of 3)')
+              } else {
+                out <- paste0(round(selected_nts /3, 0), ' (× selected nucleotides NOT a multiple of 3)')
+              } 
+            } else {
+              out <- '× Error: need at least 25 nucleotides downstream of end of mutated region'
+            }
+          } else {
+            out <- '× Error: need at least 25 nucleotides upstream of start of mutated region'
+          }
+        } else {
+          out <- '× Error: end number smaller than start number'
+        }
+      } else {
+        out <- 'Enter numbers for start and end'
+        } 
+      } else {
+        out <- '× Error: input sequence can only contain any of: A T G C a t g c'
+      }
+    
+    full <- full_data()
+    if (!all(is.na(full))) {
+      warn <- !sum(!str_detect(full$AA, '^\\*')) == length(full$AA)
+    } else {
+      warn <- NA
+    }
+    if (is.na(warn) || !warn) {
+      HTML('<i>',out,'</i>')
+    } else {
+      HTML('<i>',out,'<br>× WARNING: Stop codons deteceted! Selected the wrong frame? (Check start codon)</i>')
+    }
+  })
+  
+  output$prim_table <- renderDT({
+    full <- full_data()
+    if (!all(is.na(full))) {
+      datatable(
+        full[,c('base', 'mutation', 'homology_Tm', 'fw_primer', 'fw_len_primer', 'fw_anneal_Tm','rv_primer', 'rv_len_primer', 'rv_anneal_Tm' )],
+        options = list('pageLength' = 50, lengthMenu = c(10,25,50,100,200)),
+        rownames= FALSE
+      )
+    }
+  })
+  
+  output$plot <- renderPlot({
+    full <- full_data()
+    if (!all(is.na(full))) {
+      df <- data.frame('num' = 1:str_length(input$seq))
+      df$nt <- str_split(input$seq, '')[[1]]
+      df$target <- 'no'
+      df[input$start:input$end, 'target'] <- 'yes'
+      p <- ggplot(df, aes(x=num, y=1)) +
+        # geom_point(show.legend = F) +
+        geom_line(aes(x = num - 0.5, group = target, color = target), linewidth = 10, show.legend = F) + 
+        geom_line(aes(x = num + 0.5, group = target, color = target), linewidth = 10, show.legend = F) + 
+        scale_color_manual(values = c('yes' = 'grey', 'no' = 'grey96')) +
+        labs(x = NULL, y = NULL) +
+        annotate('text', x=1, y=0, label = '1', size = 2.5) +
+        annotate('text', x=str_length(input$seq), y=0, label = str_length(input$seq), size = 2.5, hjust=0.85) +
+        annotate('text', x=as.numeric(input$start), y=0, label = input$start, size = 2.5) +
+        annotate('text', x=as.numeric(input$end), y=0, label = input$end, size = 2.5) +
+        scale_y_continuous(limits = c(-1,2), expand = c(0,0)) +
+        scale_x_continuous(expand = c(0,0)) +
+        theme_void() 
+
+      if (str_length(input$seq) < 2000) {
+        p <- p +
+          geom_text(aes(label = nt), size = 500 / str_length(input$seq) , show.legend = F)
+      }
+      p
+    }
+  })
+  
+  observeEvent(input$example, {
+    updateTextAreaInput('seq', session = getDefaultReactiveDomain(), value = 'ATGCCATAGCATTTTTATCCATAAGATTAGCGGATCCTACCTGACGCTTTTTATCGCAACTCTCTACTGTTTCTCCATACCCGTTTTTTGGGCTAACAGGAGGAATTAACCATGGGCAGCAGCCATCATCATCATCATCACAGCAGCGGCCTGGTGCCGCGCGGCAGCCATTGACTTGGGCCCGAACAAAAACTCATCTCAGAAGAGGA')
+    updateTextInput('start', session = getDefaultReactiveDomain(), value = 112)
+    updateTextInput('end', session = getDefaultReactiveDomain(), value = 171)
+  })
+  
+  observe({
+    full <- full_data()
+    if (!all(is.na(full))) {
+      for (aa in cods$AA) {
+        writeout <- full[full$mut == cods$AA[1],c('mutation', 'fw_primer', 'rv_primer')] %>% pivot_longer(cols=-1) %>% select(2:3)
+        writeout$name <- paste0(rep(1:(nrow(writeout) /2), each=2), c('_F', '_R'))
+        write_tsv(writeout, file.path(tempdir(),paste0(aa, '.txt')), col_names = FALSE)
+      }
+    }
+  })
+  
+  output$download_prims <- downloadHandler(
+    filename = function() {
+      paste("output", "zip", sep = ".")
+      paste0('AAScanR_all_primers_', Sys.Date(), '.zip')
+    },
+    content = function(con) {
+      fs <- c()
+      for (i in 1:length(cods$AA)) {
+        path <- file.path(tempdir(), paste0(cods[i, 'AA'], '.txt'))
+        fs <- c(fs, path)
+      }
+      zip::zip(zipfile = con, files = fs, mode="cherry-pick")
+    },
+    contentType = "application/zip"
+  )
+
   
   primers <- eventReactive(input$aafiles,{
     msgp <- ''
@@ -68,7 +214,7 @@ server <- function(input, output, session) {
        )) %>% head(10) %>% paste(., collapse = ' '))
       list(NA, msg)
     }
-})
+  })
   
   out <- reactive({
     if (is.list(primers()[[1]]) && !all(is.na(muts()[[1]]))) {
@@ -86,13 +232,13 @@ server <- function(input, output, session) {
   })
   
   output$download <- downloadHandler(
-      filename = function() {
-        paste('data-', Sys.Date(), '.csv', sep='')
-      },
-      content = function(con) {
-        write_tsv(out(), con)
-      }
-    )
+    filename = function() {
+      paste('AAScanR_select_primers_', Sys.Date(), '.tsv', sep='')
+    },
+    content = function(con) {
+      write_tsv(out(), con)
+    }
+  )
   
   output$info <- renderUI({
     HTML(
