@@ -1,11 +1,15 @@
-library(tidyverse)
 library(shiny)
-library(shinyFiles)
-library(DT)
 library(shinyjs)
+library(DT)
+library(ggplot2)
+library(magrittr)
+library(stringr)
+library(readr)
+library(dplyr)
+library(tidyr)
 library(tools)
-library(Biostrings)
 library(reticulate)
+library(zip)
 
 ui <- fluidPage(
   useShinyjs(),
@@ -46,7 +50,7 @@ ui <- fluidPage(
               style = "line-height: 2.5;",
               class = "glyphicon glyphicon-info-sign",
               style = "color:#0072B2;",
-              title = 'Required input: 20 plain text files named A.txt, C.txt, D.txt, ... for each amino acid. Each file must contain two columns, in the format <residueNum>_<F/R><tab><primerSequence>, e.g.:\n\n1_F\taaaagatgcatgaagatcggaca\n1_R\tagcctgtaatagtagcatcagtatata\n2_F\tagtctgatctagtttattattaaa\n...'
+              title = 'Required input: 20 plain text files named A.txt, C.txt, D.txt, ... for each amino acid. Each file must contain two columns, in the format <residueNum>_<F/R> <primerSequence>, e.g.:\n\n1_F aaaagatgcatgaagatcggaca\n1_R agcctgtaatagtagcatcagtatata\n2_F agtctgatctagtttattattaaa\n...'
             )
           )
       ),      
@@ -96,7 +100,6 @@ ui <- fluidPage(
        ),
        br()
      ),
-     # shinyWidgets::actionBttn('calc', 'Generate'),br(),br(),br(),
      div(style="display: inline-block;vertical-align:top", HTML('<strong>Output&nbsp</strong>')),
      div(style="display: inline-block;vertical-align:top", 
          tags$a(href = 'https://github.com/matteoferla/DirEvo_tools',

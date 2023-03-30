@@ -1,6 +1,6 @@
 server <- function(input, output, session) {
-  dms <- reticulate::import("deep_mut_scanning_mf")
-  # cods <- as.data.frame(read_tsv('cods', show_col_types = F, col_names = c('AA', 'cod')))
+  AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
+  dms <- import("deep_mut_scanning_mf")
   cods <- data.frame('AA' = c("A","D","E","F","C","G","H","I","K","L","M","N","P","Q","R","S","T","V","W","Y"),
              'cod' = c("GCG","CGC","AAC","GAT","TGC","GAA","CAG","GGC","CAT","ATT","CTG","AAA","ATG","TTT","CCG","AGC","ACC","TGG","TAT","GTG"))
   full_data <- reactive({
@@ -124,7 +124,7 @@ server <- function(input, output, session) {
       for (aa in cods$AA) {
         writeout <- full[full$mut == cods$AA[1],c('mutation', 'fw_primer', 'rv_primer')] %>% pivot_longer(cols=-1) %>% select(2:3)
         writeout$name <- paste0(rep(1:(nrow(writeout) /2), each=2), c('_F', '_R'))
-        write_tsv(writeout, file.path(tempdir(),paste0(aa, '.txt')), col_names = FALSE)
+        write_delim(writeout, file.path(tempdir(),paste0(aa, '.txt')), col_names = FALSE, delim = ' ')
       }
     }
   })
@@ -140,7 +140,7 @@ server <- function(input, output, session) {
         path <- file.path(tempdir(), paste0(cods[i, 'AA'], '.txt'))
         fs <- c(fs, path)
       }
-      zip::zip(zipfile = con, files = fs, mode="cherry-pick")
+      zip(zipfile = con, files = fs, mode="cherry-pick")
     },
     contentType = "application/zip"
   )
@@ -149,7 +149,7 @@ server <- function(input, output, session) {
   primers <- eventReactive(input$aafiles,{
     msgp <- ''
     filecount <- nrow(input$aafiles)
-    filenames <- tools::file_path_sans_ext(input$aafiles$name) %>% sort()
+    filenames <- file_path_sans_ext(input$aafiles$name) %>% sort()
     if (filecount == 20) {
       msgp <- paste(msgp, '\n', "✓ Correctly selected 20 files","<br>")
       if (identical(filenames, sort(AA_STANDARD))) {
@@ -221,11 +221,15 @@ server <- function(input, output, session) {
       enable('download')
       df <- muts()[[1]]
       prim.l <- primers()[[1]]
-      for (i in 1:nrow(df)) {
-        aa <- df[i, 'mut'] %>% as.character()
-        prim.df <- prim.l[[aa]]
-        df[i, 'fw'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_F'), 'sequence']
-        df[i, 'rv'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_R'), 'sequence']
+      if (any(lapply(prim.l, function(x) str_remove(x$name, '_.$') %>% as.numeric() %>% max()) < max(as.numeric(df$num)))) {
+        df <- data.frame('Error' = 'Problem with input: mutation files with residue numbers not provided in the primer files.')
+      } else {
+        for (i in 1:nrow(df)) {
+          aa <- df[i, 'mut'] %>% as.character()
+          prim.df <- prim.l[[aa]]
+          df[i, 'fw'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_F'), 'sequence']
+          df[i, 'rv'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_R'), 'sequence']
+        }
       }
       df
     }
