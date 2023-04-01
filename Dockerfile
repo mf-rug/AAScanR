@@ -2,7 +2,7 @@
 # https://github.com/mf-rug/AAScanR
 
 # get shiny server and R from the rocker project
-FROM rocker/shiny:4.2.2
+FROM rocker/shiny:4.2.2 
 
 # use amd64 platform as I'm building this on Mac M1, check if this affects when run
 #FROM --platform=linux/amd64 ubuntu
