@@ -12,7 +12,11 @@ server <- function(input, output, session) {
         withProgress(
           message = 'Calculating primers', value = 0, {
             for (i in 1:nrow(cods)) {
-              out <- dms$deep_mutation_scan(input$seq, c(as.integer(input$start),as.integer(input$end)), mutation = cods[i, 'cod'], overlap_len=as.integer(15))
+              out <- dms$deep_mutation_scan(input$seq, 
+                                            #dms has a bug (feature?) and takes the n + 1 as the start
+                                            c(as.integer(as.integer(input$start) - 1),as.integer(input$end)), 
+                                            mutation = cods[i, 'cod'], 
+                                            overlap_len=as.integer(15))
               out.df <-
                 lapply(out, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
               out.df <- do.call('cbind', out.df) %>% t() %>% as.data.frame()
@@ -41,9 +45,9 @@ server <- function(input, output, session) {
             if (as.numeric(input$end) < (str_length(input$seq) -25)) {
               selected_nts <- as.numeric(input$end) - as.numeric(input$start) + 1
               if ((selected_nts /3) %% 1 == 0) {
-                out <- paste0(selected_nts /3, ' (✓ selected nucleotides a multiple of 3)')
+                out <- paste0(selected_nts /3, ' (✓ ', selected_nts, ' selected nucleotides a multiple of 3)')
               } else {
-                out <- paste0(round(selected_nts /3, 0), ' (× selected nucleotides NOT a multiple of 3)')
+                out <- paste0(round(selected_nts /3, 0), ' (× ', selected_nts, ' selected nucleotides NOT a multiple of 3)')
               } 
             } else {
               out <- '× Error: need at least 25 nucleotides downstream of end of mutated region'
@@ -82,13 +86,9 @@ server <- function(input, output, session) {
   })
   observeEvent(input$orf,{
     if (str_detect(input$seq, '^[ATGCatgc]+$')) {
-      a <- c()
-      for (i in seq(6, str_length(input$seq), by =3)) {
-        a <- c(a, allsubstr(input$seq, i))
-      }
-      u <- a[str_detect(a, regex('^atg.*(taa|tga|tag)$', ignore_case = TRUE))]
-      updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u[which.max(str_length(u))])[1,]['start'] %>% as.numeric() -1)
-      updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u[which.max(str_length(u))])[1,]['end'] %>% as.numeric() -3)
+      u <- str_extract(input$seq, regex('atg(?:[atgc][atgc][atcg])*?(?:taa|tga|tag)', ignore_case = TRUE))
+      updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['start'] %>% as.numeric())
+      updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['end'] %>% as.numeric() -3)
     }
   }, ignoreInit = TRUE)
   
