@@ -18,7 +18,7 @@ import math
 from warnings import warn
 import random, re
 
-
+# MF copied the class over from direvo/mutagenesis.py to not having to import it 
 class Mutation:
     """Accepts as arguments:
     * a mutation string

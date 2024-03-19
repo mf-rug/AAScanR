@@ -1,3 +1,5 @@
+# create venv if on shinyapps.io
+# code from https://stackoverflow.com/questions/74637485/shinyapps-says-python-package-not-installed-after-just-installing-it
 if (Sys.info()[['user']] == 'shiny'){
   # When running on shinyapps.io, create a virtualenv
   envs<-reticulate::virtualenv_list()
@@ -15,6 +17,8 @@ if (Sys.info()[['user']] == 'shiny'){
 } else {
   print(paste0("User: ", Sys.info()[['user']]))
 }
+
+# server
 server <- function(input, output, session) {
   allsubstr <- function(x, n) unique(substring(x, 1:(nchar(x) - n + 1), n:nchar(x)))
   AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
