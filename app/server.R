@@ -1,4 +1,20 @@
-
+if (Sys.info()[['user']] == 'shiny'){
+  # When running on shinyapps.io, create a virtualenv
+  envs<-reticulate::virtualenv_list()
+  if(!'venv_shiny_app' %in% envs)
+  {
+    reticulate::virtualenv_create(envname = 'venv_shiny_app',
+                                  python = '/usr/bin/python3')
+    reticulate::virtualenv_install('venv_shiny_app',
+                                   packages = c('Bio'))
+  }
+  # https://github.com/ranikay/shiny-reticulate-app
+  # Set environment BEFORE this
+  reticulate::use_virtualenv('venv_shiny_app', required = TRUE)
+  
+} else {
+  print(paste0("User: ", Sys.info()[['user']]))
+}
 server <- function(input, output, session) {
   allsubstr <- function(x, n) unique(substring(x, 1:(nchar(x) - n + 1), n:nchar(x)))
   AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
