@@ -42,7 +42,7 @@ ui <- fluidPage(
                  )
           )),
       HTML('<hr style="margin: 3px 0 25px" />'),
-      div(style="display: inline-block;vertical-align:top;line-height: 2.5;", HTML('<strong>20 Files from AAscan / deep_mut_scan:&nbsp&nbsp</strong>')),
+      div(style="display: inline-block;vertical-align:top;line-height: 2.5;", HTML('<strong>20 Files from AAscan:&nbsp&nbsp</strong>')),
       div(style="display: inline-block;vertical-align:top", fileInput('aafiles', NULL, multiple = TRUE)),
       div(style="display: inline-block;vertical-align:top", 
           tags$p(
@@ -78,7 +78,7 @@ ui <- fluidPage(
       htmlOutput('info')
     ),
    tabPanel(
-     title = 'Generate Primers with deep_mut_scan',
+     title = 'Generate Primers with pyAAScan',
      br(),
      div(style="display: inline-block;vertical-align:top;line-height: 2;", HTML('<Strong>Target Sequence (including flanking region)&nbsp&nbsp&nbsp</strong>')),
      div(style="display: inline-block;vertical-align:top", actionButton('example', 'load example', style = "line-height: 0.8;", class = 'butt2')),
@@ -109,7 +109,7 @@ ui <- fluidPage(
                   tags$i(
                     class = "glyphicon glyphicon-info-sign",
                     style = "color:#0072B2;",
-                    title = 'Primers are calculated with DirEvo tools\' deep_mut_scanning function: https://github.com/matteoferla/DirEvo_tools'
+                    title = 'Primers are calculated with AAScan\'s python implementation: https://github.com/kt-korbeld/pyAAscan'
                   )
                 )
          )),

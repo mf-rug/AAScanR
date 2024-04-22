@@ -14,36 +14,201 @@ if (Sys.info()[['user']] == 'shiny'){
   # Set environment BEFORE this
   reticulate::use_virtualenv('venv_shiny_app', required = TRUE)
   
-} else {
-  print(paste0("User: ", Sys.info()[['user']]))
 }
+
+aas <- c("A","A","A","A","R","R","R","R","R","R","N","N","D","D","C","C","Q","Q","E","E","G","G","G","G","H","H","*","*","*","I","I","I","L","L","L","L","L","L","K","K","M","F","F","P","P","P","P","S","S","S","S","S","S","T","T","T","T","W","Y","Y","V","V","V","V")
+cods <- c("GCT","GCC","GCA","GCG","CGT","CGC","CGA","CGG","AGA","AGG","AAT","AAC","GAT","GAC","TGT","TGC","CAA","CAG","GAA","GAG","GGT","GGC","GGA","GGG","CAT","CAC","TAA","TAG","TGA","ATT","ATC","ATA","CTT","CTC","CTA","CTG","TTA","TTG","AAA","AAG","ATG","TTT","TTC","CCT","CCC","CCA","CCG","TCT","TCC","TCA","TCG","AGT","AGC","ACT","ACC","ACA","ACG","TGG","TAT","TAC","GTT","GTC","GTA","GTG")
+
+new_translate <- function(x) {
+  p <- substring(x, 1, str_count(x) -(str_count(x) %% 3))
+  p <- strsplit(p, "")[[1]]
+  p <- paste0(p[c(TRUE, FALSE, FALSE)], p[c(FALSE, TRUE, FALSE)], p[c(FALSE, FALSE, TRUE)])
+  r <- grep('[^AGTC]', p)
+  p <- aas[match(p, cods)]
+  p[r] <- "X"
+  paste(p, collapse = "")
+}
+
+translate_frames <- function(dna_sequence) {
+  # Store results for each frame
+  translations <- list()
+  
+  # Length of the DNA sequence
+  dna_length <- nchar(dna_sequence)
+  
+  # Process each frame
+  for (frame in 1:3) {
+    start <- frame
+    # Initialize amino acid sequence for this frame
+    aa_sequence <- c()
+    
+    # Translate each codon in this frame
+    while (start <= dna_length - 2) {
+      codon <- substr(dna_sequence, start, start + 2)
+      if (nchar(codon) == 3) { # Ensure full codon
+        aa_sequence <- c(aa_sequence, new_translate(codon))
+      }
+      start <- start + 3
+    }
+    
+    # Store the translated sequence for this frame
+    translations[[frame]] <- aa_sequence
+  }
+  
+  return(translations)
+}
+
+
+# Function to find the longest ORF in a list of amino acid sequences
+find_longest_orf <- function(translations) {
+  # Function to find longest ORF in a single amino acid sequence
+  longest_orf_in_frame <- function(aa_seq) {
+    start_positions <- which(aa_seq == "M")
+    end_positions <- which(aa_seq == "*")
+    
+    # Initialize variables to track the longest ORF
+    longest_length <- 0
+    longest_orf <- NULL
+    
+    # Iterate over all start positions
+    for (start in start_positions) {
+      # Find the first end position that is greater than the start position
+      valid_ends <- end_positions[end_positions > start]
+      if (length(valid_ends) > 0) {
+        end <- valid_ends[1]
+        orf_length <- end - start + 1
+        
+        # Check if this ORF is the longest found so far
+        if (orf_length > longest_length) {
+          longest_length <- orf_length
+          longest_orf <- list(start = start, end = end)
+        }
+      }
+    }
+    
+    return(longest_orf)
+  }
+  
+  # Apply the function to each frame and store results
+  longest_orfs <- lapply(translations, longest_orf_in_frame)
+  
+  return(longest_orfs)
+}
+
+# Function to find the overall longest ORF across all frames and convert to nucleotide positions
+find_overall_longest_orf <- function(dna_seq) {
+  translations <- translate_frames(dna_seq)
+  longest_orfs <- find_longest_orf(translations)
+  
+  # Initialize a variable to store the longest ORF info
+  overall_longest <- list(length = 0, frame = NULL, start = NULL, end = NULL, nt_start = NULL, nt_end = NULL)
+  
+  # Check each frame's longest ORF and find the overall longest
+  for (i in seq_along(longest_orfs)) {
+    orf <- longest_orfs[[i]]
+    if (!is.null(orf)) {
+      orf_length <- orf$end - orf$start + 1
+      if (orf_length > overall_longest$length) {
+        overall_longest$length <- orf_length
+        overall_longest$frame <- i
+        overall_longest$start <- orf$start
+        overall_longest$end <- orf$end
+      }
+    }
+  }
+  
+  # Convert amino acid positions back to nucleotide positions
+  if (!is.null(overall_longest$frame)) {
+    overall_longest$nt_start <- (overall_longest$start - 1) * 3 + overall_longest$frame
+    overall_longest$nt_end <- (overall_longest$end - 1) * 3 + overall_longest$frame + 2
+    overall_longest$seq <- str_sub(dna_seq, overall_longest$nt_start, overall_longest$nt_end)
+  }
+  
+  return(overall_longest)
+}
+
+
+
+parse_data_to_df <- function(text) {
+  # Extract key-value pairs and sequences
+  key_vals <- str_extract_all(text, "\\b(?:[a-zA-Z]+=[^ ]+|\\b[acgtACGTnNxX]+\\b)")
+  key_vals <- lapply(key_vals, function(x) x[-1])
+  
+  # add 'f' and 'r' to distinguish data for fw and rv
+  key_vals[[1]][str_detect(key_vals[[1]], '=')] <- paste0('f', key_vals[[1]][str_detect(key_vals[[1]], '=')])
+  key_vals[[2]][str_detect(key_vals[[2]], '=')] <- paste0('r', key_vals[[2]][str_detect(key_vals[[2]], '=')])
+
+  # add a key to the primer seq, which AAScan spits out without key
+  key_vals[[1]][!str_detect(key_vals[[1]], '=')] <- paste0('fw_primer=', key_vals[[1]][!str_detect(key_vals[[1]], '=')])
+  fkv <- str_split(key_vals[[1]], ' ') %>% unlist() %>% str_split('=')
+  fwdat <- sapply(fkv, function(x) x[2])
+  names(fwdat) <- sapply(fkv, function(x) x[1])
+  
+  # same for rv
+  key_vals[[2]][!str_detect(key_vals[[2]], '=')] <- paste0('rv_primer=', key_vals[[2]][!str_detect(key_vals[[2]], '=')])
+  rkv <- str_split(key_vals[[2]], ' ') %>% unlist() %>% str_split('=')
+  revdat <- sapply(rkv, function(x) x[2])
+  names(revdat) <- sapply(rkv, function(x) x[1])
+  
+  df <- cbind(fwdat %>% as.matrix() %>% t() %>% as.data.frame(),
+              revdat %>% as.matrix() %>% t() %>% as.data.frame())
+  return(df)
+}
+
 
 # server
 server <- function(input, output, session) {
   allsubstr <- function(x, n) unique(substring(x, 1:(nchar(x) - n + 1), n:nchar(x)))
   AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
   dms <- reticulate::import("deep_mut_scanning_mf")
-  cods <- data.frame('AA' = c("A","D","E","F","C","G","H","I","K","L","M","N","P","Q","R","S","T","V","W","Y"),
-             'cod' = c("GCG","CGC","AAC","GAT","TGC","GAA","CAG","GGC","CAT","ATT","CTG","AAA","ATG","TTT","CCG","AGC","ACC","TGG","TAT","GTG"))
+  aas <- reticulate::import("pyAAscan")
+  cods <- data.frame('AA' = c("A","D","E","F",  "C",  "G",  "H",  "I",  "K",  "L",  "M",  "N",  "P",  "Q",  "R",  "S",  "T",  "V",  "W",  "Y"),
+             'cod1' = c("GCG","GAT","GAA","TTT","TGC","GGC","CAT","ATT","AAA","CTG","ATG","AAC","CCG","CAG","CGT","AGC","ACC","GTG","TGG","TAT"),
+             'cod2' = c("GCC","GAC","GAG","TTC","TGT","GGT","CAG","ATC","AAG","TTA","ATG","AAT","CCA","CAA","CGC","TCT","ACG","GTT","TGG","TAC"))
+
   full_data <- reactive({
     if (str_detect(input$seq, '^[ATGCatgc]+$') && str_detect(input$start, '^[0-9]+$') && str_detect(input$end, '^[0-9]+$')) {
       if (as.numeric(input$start) < as.numeric(input$end) && as.numeric(input$start) > 25 && as.numeric(input$end) < (str_length(input$seq) -25)) {
         full <- data.frame()
+        full_old <- data.frame()
         withProgress(
           message = 'Calculating primers', value = 0, {
+            # loop over i 20 AAs
             for (i in 1:nrow(cods)) {
-              out <- dms$deep_mutation_scan(input$seq, 
+              out_old <- dms$deep_mutation_scan(input$seq,
                                             #dms has a bug (feature?) and takes the n + 1 as the start
-                                            c(as.integer(as.integer(input$start) - 1),as.integer(input$end)), 
-                                            mutation = cods[i, 'cod'], 
+                                            c(as.integer(as.integer(input$start) - 1),as.integer(input$end)),
+                                            mutation = cods[i, 'cod1'],
                                             overlap_len=as.integer(15))
-              out.df <-
-                lapply(out, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
-              out.df <- do.call('cbind', out.df) %>% t() %>% as.data.frame()
+              out_old.df <- data.frame()
+              out_old.df <-
+                lapply(out_old, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
+              out_old.df <- do.call('cbind', out_old.df) %>% t() %>% as.data.frame()
+              out_old.df$mut <- cods[i, 'AA']
+              out_old.df$Mutation <- paste0(out_old.df$AA, out_old.df$mut)
+              full_old <- rbind(full_old, out_old.df)
+              
+              out.df <- data.frame()
+              # loop over j codons in the selected sequence
+              for (j in 1:(floor((as.integer(input$end) - as.integer(input$start)) /3))) {
+                out <- aas$Mutate(seq_in = input$seq,
+                         cod1pos = as.integer(as.numeric(input$start) +1),
+                         mutpos = as.integer(j),
+                         codon1 = cods[i, 'cod1'],
+                         codon2 = cods[i, 'cod2'])
+                add_df <- parse_data_to_df(out)
+                cod_end <- as.numeric(input$start) + (j*3)
+                codon <- str_sub(input$seq,cod_end -2, cod_end)
+                add_df$codon <- codon
+                # add_df$AA <- Biostrings::translate(DNAString(codon)) %>% as.character()
+                add_df$AA <- new_translate(codon)
+                add_df$pos <- j
+                out.df <- rbind(out.df, add_df)
+              }
               out.df$mut <- cods[i, 'AA']
-              out.df$mutation <- paste0(out.df$AA, out.df$mut)
+              out.df$mutation <- paste0(out.df$AA, out.df$pos, out.df$mut)
               full <- rbind(full, out.df)
-              incProgress(1/nrow(cods), detail = HTML("<br>current amino acid is", cods[i, 'AA']))
+              incProgress(1/nrow(cods), detail = HTML("current amino acid is", cods[i, 'AA']))
             }
           }
         )
@@ -63,11 +228,11 @@ server <- function(input, output, session) {
         if (as.numeric(input$start) < as.numeric(input$end)) {
           if (as.numeric(input$start) > 25) {
             if (as.numeric(input$end) < (str_length(input$seq) -25)) {
-              selected_nts <- as.numeric(input$end) - as.numeric(input$start) + 1
+              selected_nts <- as.numeric(input$end) - as.numeric(input$start) 
               if ((selected_nts /3) %% 1 == 0) {
-                out <- paste0(selected_nts /3, ' (✓ ', selected_nts, ' selected nucleotides a multiple of 3)')
+                out <- paste0(selected_nts /3, ' (✓ ', selected_nts, ' selected nucleotides are a multiple of 3)')
               } else {
-                out <- paste0(round(selected_nts /3, 0), ' (× ', selected_nts, ' selected nucleotides NOT a multiple of 3)')
+                out <- paste0(round(selected_nts /3, 0), ' (× ', selected_nts, ' selected nucleotides are NOT a multiple of 3)')
               } 
             } else {
               out <- '× Error: need at least 25 nucleotides downstream of end of mutated region'
@@ -106,9 +271,13 @@ server <- function(input, output, session) {
   })
   observeEvent(input$orf,{
     if (str_detect(input$seq, '^[ATGCatgc]+$')) {
-      u <- str_extract(input$seq, regex('atg(?:[atgc][atgc][atcg])*?(?:taa|tga|tag)', ignore_case = TRUE))
-      updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['start'] %>% as.numeric())
-      updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['end'] %>% as.numeric() -3)
+      # u <- str_extract(input$seq, regex('atg(?:[atgc][atgc][atcg])*?(?:taa|tga|tag)', ignore_case = TRUE))
+      # updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['start'] %>% as.numeric() -1)
+      # updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['end'] %>% as.numeric() -3)
+      u <- find_overall_longest_orf(input$seq)
+      print(u)
+      updateTextInput('start', session = getDefaultReactiveDomain(), value = u$nt_start -1)
+      updateTextInput('end', session = getDefaultReactiveDomain(), value = u$nt_end -3)
     }
   }, ignoreInit = TRUE)
   
@@ -116,9 +285,10 @@ server <- function(input, output, session) {
     full <- full_data()
     if (!all(is.na(full))) {
       datatable(
-        full[,c('base', 'mutation', 'homology_Tm', 'fw_primer', 'fw_len_primer', 'fw_anneal_Tm','rv_primer', 'rv_len_primer', 'rv_anneal_Tm' )],
+        full[,c('mutation', 'codon', 'fw_primer', 'flen', 'fTm','fTmfull', 'fGCcontent', 'rv_primer', 'rlen', 'rTm','rTmfull', 'rGCcontent')],
+        # full[,c('base', 'mutation', 'homology_Tm', 'fw_primer', 'fw_len_primer', 'fw_anneal_Tm','rv_primer', 'rv_len_primer', 'rv_anneal_Tm' )],
         options = list('pageLength' = 50, lengthMenu = c(10,25,50,100,200)),
-        rownames= FALSE
+        rownames= TRUE
       )
     }
   })
