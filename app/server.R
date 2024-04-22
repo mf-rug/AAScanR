@@ -175,29 +175,29 @@ server <- function(input, output, session) {
           message = 'Calculating primers', value = 0, {
             # loop over i 20 AAs
             for (i in 1:nrow(cods)) {
-              out_old <- dms$deep_mutation_scan(input$seq,
-                                            #dms has a bug (feature?) and takes the n + 1 as the start
-                                            c(as.integer(as.integer(input$start) - 1),as.integer(input$end)),
-                                            mutation = cods[i, 'cod1'],
-                                            overlap_len=as.integer(15))
-              out_old.df <- data.frame()
-              out_old.df <-
-                lapply(out_old, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
-              out_old.df <- do.call('cbind', out_old.df) %>% t() %>% as.data.frame()
-              out_old.df$mut <- cods[i, 'AA']
-              out_old.df$Mutation <- paste0(out_old.df$AA, out_old.df$mut)
-              full_old <- rbind(full_old, out_old.df)
-              
+              # out_old <- dms$deep_mutation_scan(input$seq,
+              #                               #dms has a bug (feature?) and takes the n + 1 as the start
+              #                               c(as.integer(as.integer(input$start) - 1),as.integer(input$end)),
+              #                               mutation = cods[i, 'cod1'],
+              #                               overlap_len=as.integer(15))
+              # out_old.df <- data.frame()
+              # out_old.df <-
+              #   lapply(out_old, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
+              # out_old.df <- do.call('cbind', out_old.df) %>% t() %>% as.data.frame()
+              # out_old.df$mut <- cods[i, 'AA']
+              # out_old.df$Mutation <- paste0(out_old.df$AA, out_old.df$mut)
+              # full_old <- rbind(full_old, out_old.df)
+              # 
               out.df <- data.frame()
               # loop over j codons in the selected sequence
-              for (j in 1:(floor((as.integer(input$end) - as.integer(input$start)) /3))) {
+              for (j in 1:(floor((as.integer(input$end) - as.integer(input$start) -1) /3))) {
                 out <- aas$Mutate(seq_in = input$seq,
-                         cod1pos = as.integer(as.numeric(input$start) +1),
+                         cod1pos = as.integer(as.numeric(input$start) -1),
                          mutpos = as.integer(j),
                          codon1 = cods[i, 'cod1'],
                          codon2 = cods[i, 'cod2'])
                 add_df <- parse_data_to_df(out)
-                cod_end <- as.numeric(input$start) + (j*3)
+                cod_end <- as.numeric(input$start) -1 + (j*3)
                 codon <- str_sub(input$seq,cod_end -2, cod_end)
                 add_df$codon <- codon
                 # add_df$AA <- Biostrings::translate(DNAString(codon)) %>% as.character()
@@ -228,7 +228,7 @@ server <- function(input, output, session) {
         if (as.numeric(input$start) < as.numeric(input$end)) {
           if (as.numeric(input$start) > 25) {
             if (as.numeric(input$end) < (str_length(input$seq) -25)) {
-              selected_nts <- as.numeric(input$end) - as.numeric(input$start) 
+              selected_nts <- as.numeric(input$end) - as.numeric(input$start) +1
               if ((selected_nts /3) %% 1 == 0) {
                 out <- paste0(selected_nts /3, ' (✓ ', selected_nts, ' selected nucleotides are a multiple of 3)')
               } else {
@@ -276,7 +276,7 @@ server <- function(input, output, session) {
       # updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['end'] %>% as.numeric() -3)
       u <- find_overall_longest_orf(input$seq)
       print(u)
-      updateTextInput('start', session = getDefaultReactiveDomain(), value = u$nt_start -1)
+      updateTextInput('start', session = getDefaultReactiveDomain(), value = u$nt_start)
       updateTextInput('end', session = getDefaultReactiveDomain(), value = u$nt_end -3)
     }
   }, ignoreInit = TRUE)
@@ -299,7 +299,7 @@ server <- function(input, output, session) {
       df <- data.frame('num' = 1:str_length(input$seq))
       df$nt <- str_split(input$seq, '')[[1]]
       df$target <- 'no'
-      df[input$start:input$end, 'target'] <- 'yes'
+      df[(as.numeric(input$start) -1):as.numeric(input$end), 'target'] <- 'yes'
       p <- ggplot(df, aes(x=num, y=1)) +
         # geom_point(show.legend = F) +
         geom_line(aes(x = num - 0.5, group = target, color = target), linewidth = 10, show.legend = F) + 
@@ -308,7 +308,7 @@ server <- function(input, output, session) {
         labs(x = NULL, y = NULL) +
         annotate('text', x=1, y=0, label = '1', size = 2.5) +
         annotate('text', x=str_length(input$seq), y=0, label = str_length(input$seq), size = 2.5, hjust=0.85) +
-        annotate('text', x=as.numeric(input$start), y=0, label = input$start, size = 2.5) +
+        annotate('text', x=as.numeric(input$start) -1, y=0, label = input$start, size = 2.5) +
         annotate('text', x=as.numeric(input$end), y=0, label = input$end, size = 2.5) +
         scale_y_continuous(limits = c(-1,2), expand = c(0,0)) +
         scale_x_continuous(expand = c(0,0)) +
@@ -324,7 +324,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$example, {
     updateTextAreaInput('seq', session = getDefaultReactiveDomain(), value = 'TTTCTCCATACCCGTTTTTTGGGCTAACAGGAGGAATTAACCATGAACACGATTAACATCGCTAAGAACGACTTCGAGATGGGTGAAGCACGCTTCGAGGTTGCGGATAACGCTGCCGCCTAACTTGGGCCCGAACAAAAACTCATCTCAGAAGAGGATCTGAATAGC')
-    updateTextInput('start', session = getDefaultReactiveDomain(), value = 42)
+    updateTextInput('start', session = getDefaultReactiveDomain(), value = 43)
     updateTextInput('end', session = getDefaultReactiveDomain(), value = 68)
   })
   
