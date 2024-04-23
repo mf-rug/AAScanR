@@ -275,7 +275,6 @@ server <- function(input, output, session) {
       # updateTextInput('start', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['start'] %>% as.numeric() -1)
       # updateTextInput('end', session = getDefaultReactiveDomain(), value = str_locate(input$seq, u)[1,]['end'] %>% as.numeric() -3)
       u <- find_overall_longest_orf(input$seq)
-      print(u)
       updateTextInput('start', session = getDefaultReactiveDomain(), value = u$nt_start)
       updateTextInput('end', session = getDefaultReactiveDomain(), value = u$nt_end -3)
     }
