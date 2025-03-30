@@ -1,20 +1,20 @@
 # create venv if on shinyapps.io
 # code from https://stackoverflow.com/questions/74637485/shinyapps-says-python-package-not-installed-after-just-installing-it
-if (Sys.info()[['user']] == 'shiny'){
+# if (Sys.info()[['user']] == 'shiny'){
   # When running on shinyapps.io, create a virtualenv
   envs<-reticulate::virtualenv_list()
-  if(!'venv_shiny_app' %in% envs)
+  if(!'venv_aascanr_app' %in% envs)
   {
-    reticulate::virtualenv_create(envname = 'venv_shiny_app',
-                                  python = '/usr/bin/python3')
-    reticulate::virtualenv_install('venv_shiny_app',
+    reticulate::virtualenv_create(envname = 'venv_aascanr_app',
+                                  python = '/opt/homebrew/bin/python3')
+    reticulate::virtualenv_install('venv_aascanr_app',
                                    packages = c('Bio'))
   }
   # https://github.com/ranikay/shiny-reticulate-app
   # Set environment BEFORE this
-  reticulate::use_virtualenv('venv_shiny_app', required = TRUE)
+  reticulate::use_virtualenv('venv_aascanr_app', required = TRUE)
   
-}
+# }
 
 aas <- c("A","A","A","A","R","R","R","R","R","R","N","N","D","D","C","C","Q","Q","E","E","G","G","G","G","H","H","*","*","*","I","I","I","L","L","L","L","L","L","K","K","M","F","F","P","P","P","P","S","S","S","S","S","S","T","T","T","T","W","Y","Y","V","V","V","V")
 cods <- c("GCT","GCC","GCA","GCG","CGT","CGC","CGA","CGG","AGA","AGG","AAT","AAC","GAT","GAC","TGT","TGC","CAA","CAG","GAA","GAG","GGT","GGC","GGA","GGG","CAT","CAC","TAA","TAG","TGA","ATT","ATC","ATA","CTT","CTC","CTA","CTG","TTA","TTG","AAA","AAG","ATG","TTT","TTC","CCT","CCC","CCA","CCG","TCT","TCC","TCA","TCG","AGT","AGC","ACT","ACC","ACA","ACG","TGG","TAT","TAC","GTT","GTC","GTA","GTG")
@@ -158,6 +158,9 @@ parse_data_to_df <- function(text) {
 
 # server
 server <- function(input, output, session) {
+  muts <- reactiveVal(NULL)
+  muts_good <- reactiveVal(NULL)
+  muts_msg <- reactiveVal(NULL)
   allsubstr <- function(x, n) unique(substring(x, 1:(nchar(x) - n + 1), n:nchar(x)))
   AA_STANDARD <- c("A","R","N","D","C","Q","E","G","H","I","L","K","M","F","P","S","T","W","Y","V")
   dms <- reticulate::import("deep_mut_scanning_mf")
@@ -175,19 +178,7 @@ server <- function(input, output, session) {
           message = 'Calculating primers', value = 0, {
             # loop over i 20 AAs
             for (i in 1:nrow(cods)) {
-              # out_old <- dms$deep_mutation_scan(input$seq,
-              #                               #dms has a bug (feature?) and takes the n + 1 as the start
-              #                               c(as.integer(as.integer(input$start) - 1),as.integer(input$end)),
-              #                               mutation = cods[i, 'cod1'],
-              #                               overlap_len=as.integer(15))
-              # out_old.df <- data.frame()
-              # out_old.df <-
-              #   lapply(out_old, function(x) lapply(x, as.character) %>% unlist() %>% as.data.frame)
-              # out_old.df <- do.call('cbind', out_old.df) %>% t() %>% as.data.frame()
-              # out_old.df$mut <- cods[i, 'AA']
-              # out_old.df$Mutation <- paste0(out_old.df$AA, out_old.df$mut)
-              # full_old <- rbind(full_old, out_old.df)
-              # 
+
               out.df <- data.frame()
               # loop over j codons in the selected sequence
               for (j in 1:(floor((as.integer(input$end) - as.integer(input$start) -1) /3))) {
@@ -216,7 +207,17 @@ server <- function(input, output, session) {
       } else { disable('download_prims') }
     } else { disable('download_prims') }
     if (exists('full')) {
-      full
+      if (!is.null(muts_good()) && muts_good()) {
+        full_subset <- full[full$mutation %in% muts()$Mutation,]
+        if (nrow(full_subset) == 0) {
+          muts_msg('× Warning: none of the supplied mutations matched the selected sequence!')
+        } else if (nrow(full_subset) < nrow(muts())) {
+          muts_msg('× Warning: not all the supplied mutations matched the selected sequence!')
+        }
+        full_subset
+      } else {
+        full
+      }
     } else {
       NA
     }
@@ -326,72 +327,52 @@ server <- function(input, output, session) {
     updateTextInput('start', session = getDefaultReactiveDomain(), value = 43)
     updateTextInput('end', session = getDefaultReactiveDomain(), value = 68)
   })
-  
-  observe({
-    full <- full_data()
-    if (!all(is.na(full))) {
-      for (aa in cods$AA) {
-        writeout <- full[full$mut == cods$AA[1],c('mutation', 'fw_primer', 'rv_primer')] %>% pivot_longer(cols=-1) %>% select(2:3)
-        writeout$name <- paste0(rep(1:(nrow(writeout) /2), each=2), c('_F', '_R'))
-        write_delim(writeout, file.path(tempdir(),paste0(aa, '.txt')), col_names = FALSE, delim = ' ')
-      }
-    }
-  })
+
   
   output$download_prims <- downloadHandler(
     filename = function() {
-      paste("output", "zip", sep = ".")
-      paste0('AAScanR_all_primers_', Sys.Date(), '.zip')
+      paste0('AAScanR_primers_', Sys.Date(), '.tsv')
     },
     content = function(con) {
-      fs <- c()
-      for (i in 1:length(cods$AA)) {
-        path <- file.path(tempdir(), paste0(cods[i, 'AA'], '.txt'))
-        fs <- c(fs, path)
+      df <- full_data()
+      muts <- muts()$Mutation
+      if (!is.null(muts)) {
+        df <- df[df$mutation %in% muts, ]
       }
-      zip(zipfile = con, files = fs, mode="cherry-pick")
+      df <- df[, c("mutation", "fw_primer", "rv_primer")]
+      write.table(df, con, sep = "\t", row.names = FALSE, quote = FALSE)
     },
-    contentType = "application/zip"
+    contentType = "text/tab-separated-values"
   )
-
   
-  primers <- eventReactive(input$aafiles,{
-    msgp <- ''
-    filecount <- nrow(input$aafiles)
-    filenames <- file_path_sans_ext(input$aafiles$name) %>% sort()
-    if (filecount == 20) {
-      msgp <- paste(msgp, '\n', "✓ Correctly selected 20 files","<br>")
-      if (identical(filenames, sort(AA_STANDARD))) {
-        msgp <- paste(msgp, '\n', paste("✓ Filenames match", paste(sort(AA_STANDARD), collapse = ' ')),"<br>")
-        prim.l <- list()
-        for (i in 1:filecount) {
-          aa <- file_path_sans_ext(input$aafiles[i, 'name'])
-          df <- read_delim(input$aafiles[i, 'datapath'], delim = ' ', col_names = c('name', 'sequence'), show_col_types = F, skip_empty_rows = T) %>% as.data.frame()
-          # get rid of rows with only NA
-          prim.l[[aa]] <- df[!!rowSums(!is.na(df)),]
-        }
-        if (lapply(prim.l, nrow) %>% unlist() %>% unique() %>% length() == 1) {
-          msgp <- paste(msgp, '\n', '✓ All input files contain the same number of primers',"<br>")
-        } else {
-           msgp <- paste(msgp, '\n', '× ERROR: Input files do not contain the same number of primers',"<br>")
-           msgp <- paste(msgp, '\n', lapply(prim.l, nrow) %>% unlist() %>% paste(., collapse = ' '),"<br>")
-        }
-      } else {
-         msgp <- paste(msgp, '\n', paste("× ERROR: Filenames do not match", paste(sort(AA_STANDARD), collapse = ',')),"<br>")
-         msgp <- paste(msgp, '\n', paste(filenames, collapse = ','),"<br>")
-      }
-    } else {
-      msgp <- paste(msgp, '\n', "× ERROR: Did not select 20 files, instead got:")
-      msgp <- paste(msgp, '\n', filecount,"<br>")
-    }
-    if (exists('prim.l')) {
-      list(prim.l, msgp)
-    } else {
-      list(NA, msgp)
-    }
-  })
   
-  muts <- eventReactive(input$mutfile,{
+  observeEvent(input$mutinput,{
+    msg <- ''
+    df <- data.frame('Mutation' = str_split(input$mutinput, '\n')[[1]])
+    if (all(sapply(df$Mutation, function(x) {
+      str_detect(x, paste0(
+        '^[',
+        paste0(AA_STANDARD, collapse = ''),
+        '][0-9]+[',
+        paste0(AA_STANDARD, collapse = ''),
+        ']$'
+      ))
+    }))) {
+      msg <- paste(msg, '\n', '✓ Mutant input correct')
+      df$aa <- str_extract(df$Mutation, '^[A-Z]')
+      df$num <- str_extract(df$Mutation, '[0-9]+')
+      df$mut <- str_extract(df$Mutation, '[A-Z]$')
+      muts_good(TRUE)
+    } else {
+      msg <- paste(msg, '\n', '× ERROR: Mutant input incorrect. Showing all Primers.')
+      muts_good(FALSE)
+    }
+    muts(df)
+    muts_msg(msg)
+  },ignoreInit = TRUE)
+  
+  
+  observeEvent(input$mutfile,{
     msg <- ''
     filename <- file_path_sans_ext(input$mutfile$name)
     df <- read_csv(input$mutfile$datapath, col_names = 'Mutation', show_col_types = F, skip_empty_rows = T)
@@ -408,59 +389,21 @@ server <- function(input, output, session) {
       df$aa <- str_extract(df$Mutation, '^[A-Z]')
       df$num <- str_extract(df$Mutation, '[0-9]+')
       df$mut <- str_extract(df$Mutation, '[A-Z]$')
-      list(df, msg)
+      muts_good(TRUE)
     } else {
-      msg <- paste(msg, '\n', '× ERROR: Mutant input file incorrect')
-      msg <- paste(msg, '\n', sapply(df$Mutation, function(x)
-       str_detect(
-         x, paste0(
-           '^[',
-           paste0(AA_STANDARD, collapse = ''),
-           '][0-9]+[',
-           paste0(AA_STANDARD, collapse = ''),
-           ']$'
-         )
-       )) %>% head(10) %>% paste(., collapse = ' '))
-      list(NA, msg)
+      msg <- paste(msg, '\n', '× ERROR: Mutant input file incorrect. Showing all Primers.')
+      muts_good(FALSE)
     }
-  })
+    muts(df)
+    muts_msg(msg)
+  },ignoreInit = TRUE)
   
-  out <- reactive({
-    if (is.list(primers()[[1]]) && !all(is.na(muts()[[1]]))) {
-      enable('download')
-      df <- muts()[[1]]
-      prim.l <- primers()[[1]]
-      if (any(lapply(prim.l, function(x) str_remove(x$name, '_.$') %>% as.numeric() %>% max()) < max(as.numeric(df$num)))) {
-        df <- data.frame('Error' = 'Problem with input: mutation files with residue numbers not provided in the primer files.')
-      } else {
-        for (i in 1:nrow(df)) {
-          aa <- df[i, 'mut'] %>% as.character()
-          prim.df <- prim.l[[aa]]
-          df[i, 'fw'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_F'), 'sequence']
-          df[i, 'rv'] <- prim.df[prim.df$name == paste0(df[i, 'num'],'_R'), 'sequence']
-        }
-      }
-      df
-    }
-  })
-  
-  output$download <- downloadHandler(
-    filename = function() {
-      paste('AAScanR_select_primers_', Sys.Date(), '.tsv', sep='')
-    },
-    content = function(con) {
-      write_tsv(out(), con)
-    }
-  )
   
   output$info <- renderUI({
     HTML(
-      primers()[[2]], '<br>',
-      muts()[[2]]
+      muts_msg()
     )
   })
-  output$table <- renderDT({
-    out()
-  })
+  
 }
 
